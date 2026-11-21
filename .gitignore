@@ -1,0 +1,69 @@
+# =============================================
+# SmartResolve — .gitignore
+# Eclipse Dynamic Web Project + Tomcat 10.1
+# =============================================
+
+# ----- Eclipse IDE -----
+.metadata/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.classpath_backup
+
+# Eclipse launch configs (local server configs)
+*.launch
+.externalToolBuilders/
+.recommenders/
+
+# Eclipse workspace metadata (never commit)
+.metadata
+
+# ----- Build Output -----
+build/
+out/
+target/
+*.class
+
+# ----- Tomcat Deployment Cache -----
+.tomcat/
+work/
+
+# ----- Dependencies (not committed — place JARs in WEB-INF/lib manually) -----
+# WEB-INF/lib JARs are committed intentionally for Eclipse non-Maven projects
+# so do NOT ignore WEB-INF/lib here
+
+# ----- Sensitive Configuration -----
+# Never commit credentials
+db.properties
+database.properties
+*.env
+secret.properties
+application-local.properties
+
+# ----- OS Files -----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----- Logs -----
+*.log
+logs/
+catalina.out
+
+# ----- IDE — IntelliJ -----
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ----- Node / Frontend tools (not used here, but just in case) -----
+node_modules/
+npm-debug.log
+
+# ----- Uploaded Files (store outside webroot in production) -----
+uploads/
+
+# ----- Test Reports -----
+test-output/
