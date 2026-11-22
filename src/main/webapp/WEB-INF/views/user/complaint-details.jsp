@@ -1,11 +1,15 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+<%@ page import="java.util.List" %>
 <%@ page import="com.smartresolve.model.Complaint" %>
+<%@ page import="com.smartresolve.model.ComplaintUpdate" %>
 <%
     Complaint c = (Complaint) request.getAttribute("complaint");
     if (c == null) {
         response.sendRedirect(request.getContextPath() + "/user/complaints");
         return;
     }
+    @SuppressWarnings("unchecked")
+    List<ComplaintUpdate> updates = (List<ComplaintUpdate>) request.getAttribute("updates");
 %>
 <!DOCTYPE html>
 <html lang="en">
@@ -25,6 +29,37 @@
             border: none;
             border-radius: 12px;
             box-shadow: 0 4px 16px rgba(0,0,0,0.05);
+        }
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 11px;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: #e2e8f0;
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 24px;
+        }
+        .timeline-marker {
+            position: absolute;
+            left: -30px;
+            top: 2px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid #3b82f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
         }
     </style>
 </head>
@@ -61,10 +96,11 @@
 
         <div class="row g-4">
             
-            <!-- Left Column: Complaint Overview -->
+            <!-- Left Column: Complaint Overview & Audit Timeline -->
             <div class="col-lg-8">
+                
+                <!-- Main Overview Card -->
                 <div class="card detail-card p-4 bg-white mb-4">
-                    
                     <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
                         <div>
                             <span class="badge bg-light text-dark border fs-6 fw-bold mb-2"><%= c.getComplaintNumber() %></span>
@@ -118,6 +154,40 @@
                         <% } %>
                     </div>
                 </div>
+
+                <!-- Complaint Status History Timeline Card -->
+                <div class="card detail-card p-4 bg-white">
+                    <h5 class="fw-bold mb-4"><i class="bi bi-clock-history text-primary me-2"></i>Status History & Timeline</h5>
+                    
+                    <% if (updates == null || updates.isEmpty()) { %>
+                        <p class="text-muted small mb-0">No updates recorded yet.</p>
+                    <% } else { %>
+                        <div class="timeline">
+                            <% for (ComplaintUpdate u : updates) { %>
+                                <div class="timeline-item">
+                                    <div class="timeline-marker">
+                                        <i class="bi <%= u.getStatusIcon() %>"></i>
+                                    </div>
+                                    <div class="bg-light p-3 rounded-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-1 flex-wrap">
+                                            <span class="badge <%= u.getStatusBadgeClass() %>"><%= u.getNewStatus() %></span>
+                                            <small class="text-muted"><%= u.getCreatedAt() %></small>
+                                        </div>
+                                        <div class="small fw-semibold text-dark mt-1">
+                                            Updated by: <%= u.getUpdatedByName() %> (<span class="text-muted"><%= u.getUpdatedByRole() %></span>)
+                                        </div>
+                                        <% if (u.getRemarks() != null && !u.getRemarks().trim().isEmpty()) { %>
+                                            <div class="text-secondary small mt-2 fst-italic">
+                                                "<%= u.getRemarks() %>"
+                                            </div>
+                                        <% } %>
+                                    </div>
+                                </div>
+                            <% } %>
+                        </div>
+                    <% } %>
+                </div>
+
             </div>
 
             <!-- Right Column: Status & Assignment Summary -->
@@ -148,7 +218,7 @@
                 <!-- Timestamps Card -->
                 <div class="card detail-card p-4 bg-white">
                     <h6 class="fw-bold text-secondary text-uppercase small mb-3">
-                        <i class="bi bi-clock-history me-1 text-info"></i>Audit Details
+                        <i class="bi bi-info-circle me-1 text-info"></i>Audit Summary
                     </h6>
                     <ul class="list-unstyled mb-0 small text-secondary">
                         <li class="mb-2"><strong>Created:</strong> <%= c.getCreatedAt() %></li>

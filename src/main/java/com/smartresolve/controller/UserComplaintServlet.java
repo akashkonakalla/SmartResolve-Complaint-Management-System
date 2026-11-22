@@ -1,6 +1,7 @@
 package com.smartresolve.controller;
 
 import com.smartresolve.model.Complaint;
+import com.smartresolve.model.ComplaintUpdate;
 import com.smartresolve.model.User;
 import com.smartresolve.service.ComplaintService;
 import jakarta.servlet.ServletException;
@@ -19,7 +20,8 @@ import java.util.stream.Collectors;
 
 /**
  * UserComplaintServlet handles listing a user's submitted complaints
- * and viewing detailed individual complaint records with IDOR protection.
+ * and viewing detailed individual complaint records with IDOR protection
+ * and complete audit history timelines.
  */
 @WebServlet(name = "UserComplaintServlet", urlPatterns = {"/user/complaints", "/user/complaint/details"})
 public class UserComplaintServlet extends HttpServlet {
@@ -119,7 +121,11 @@ public class UserComplaintServlet extends HttpServlet {
                 return;
             }
 
+            // Load audit status timeline
+            List<ComplaintUpdate> updates = complaintService.getComplaintHistory(complaintId);
+
             request.setAttribute("complaint", complaint);
+            request.setAttribute("updates", updates);
             request.getRequestDispatcher("/WEB-INF/views/user/complaint-details.jsp").forward(request, response);
 
         } catch (SQLException e) {

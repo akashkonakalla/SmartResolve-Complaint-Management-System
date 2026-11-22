@@ -2,8 +2,10 @@ package com.smartresolve.service;
 
 import com.smartresolve.dao.CategoryDAO;
 import com.smartresolve.dao.ComplaintDAO;
+import com.smartresolve.dao.ComplaintUpdateDAO;
 import com.smartresolve.model.Category;
 import com.smartresolve.model.Complaint;
+import com.smartresolve.model.ComplaintUpdate;
 import com.smartresolve.util.ValidationUtil;
 
 import java.sql.SQLException;
@@ -16,15 +18,18 @@ public class ComplaintService {
 
     private final ComplaintDAO complaintDAO;
     private final CategoryDAO categoryDAO;
+    private final ComplaintUpdateDAO complaintUpdateDAO;
 
     public ComplaintService() {
         this.complaintDAO = new ComplaintDAO();
         this.categoryDAO = new CategoryDAO();
+        this.complaintUpdateDAO = new ComplaintUpdateDAO();
     }
 
-    public ComplaintService(ComplaintDAO complaintDAO, CategoryDAO categoryDAO) {
+    public ComplaintService(ComplaintDAO complaintDAO, CategoryDAO categoryDAO, ComplaintUpdateDAO complaintUpdateDAO) {
         this.complaintDAO = complaintDAO;
         this.categoryDAO = categoryDAO;
+        this.complaintUpdateDAO = complaintUpdateDAO;
     }
 
     public List<Category> getAllCategories() throws SQLException {
@@ -86,5 +91,12 @@ public class ComplaintService {
 
     public Complaint getComplaintById(int id) throws SQLException {
         return complaintDAO.findById(id);
+    }
+
+    /**
+     * Retrieves the complete chronological status update timeline for a complaint.
+     */
+    public List<ComplaintUpdate> getComplaintHistory(int complaintId) throws SQLException {
+        return complaintUpdateDAO.findByComplaintId(complaintId);
     }
 }
