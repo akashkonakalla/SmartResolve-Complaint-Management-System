@@ -243,9 +243,6 @@ public class ComplaintDAO {
         return stats;
     }
 
-    /**
-     * Calculates system-wide metrics across all complaints for administrator dashboard.
-     */
     public Map<String, Integer> getAdminStatistics() throws SQLException {
         Map<String, Integer> stats = new HashMap<>();
         stats.put("total", 0);
@@ -274,9 +271,6 @@ public class ComplaintDAO {
         return stats;
     }
 
-    /**
-     * Retrieves active workload distribution for all registered technicians.
-     */
     public List<Map<String, Object>> getTechnicianWorkloads() throws SQLException {
         List<Map<String, Object>> workloads = new ArrayList<>();
         try (Connection conn = DBConnection.getConnection();
@@ -295,6 +289,65 @@ public class ComplaintDAO {
             throw e;
         }
         return workloads;
+    }
+
+    /**
+     * Executes dynamic, parameterized search and multi-facet filtering.
+     * Guaranteed SQL injection safe via PreparedStatement positional parameters.
+     */
+    public List<Complaint> searchAndFilter(String keyword, String status, Integer categoryId, String priority) 
+            throws SQLException {
+
+        StringBuilder sql = new StringBuilder(SQL_SELECT_JOIN);
+        sql.append("WHERE 1=1 ");
+
+        List<Object> params = new ArrayList<>();
+
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String term = "%" + keyword.trim() + "%";
+            sql.append("AND (c.complaint_number LIKE ? OR c.title LIKE ? OR c.description LIKE ? OR c.location LIKE ? OR u.full_name LIKE ?) ");
+            params.add(term);
+            params.add(term);
+            params.add(term);
+            params.add(term);
+            params.add(term);
+        }
+
+        if (status != null && !status.trim().isEmpty() && !"ALL".equalsIgnoreCase(status)) {
+            sql.append("AND c.status = ? ");
+            params.add(status.trim().toUpperCase());
+        }
+
+        if (categoryId != null && categoryId > 0) {
+            sql.append("AND c.category_id = ? ");
+            params.add(categoryId);
+        }
+
+        if (priority != null && !priority.trim().isEmpty() && !"ALL".equalsIgnoreCase(priority)) {
+            sql.append("AND c.priority = ? ");
+            params.add(priority.trim().toUpperCase());
+        }
+
+        sql.append("ORDER BY c.created_at DESC");
+
+        List<Complaint> list = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
+            }
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToComplaint(rs));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error searching and filtering complaints", e);
+            throw e;
+        }
+        return list;
     }
 
     private String generateComplaintNumber(Connection conn) throws SQLException {
