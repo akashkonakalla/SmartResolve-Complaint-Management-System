@@ -47,6 +47,9 @@ public class ComplaintDAO {
     private static final String SQL_FIND_RECENT_BY_USER_ID = 
         SQL_SELECT_JOIN + "WHERE c.user_id = ? ORDER BY c.created_at DESC LIMIT ?";
 
+    private static final String SQL_FIND_RECENT_ALL = 
+        SQL_SELECT_JOIN + "ORDER BY c.created_at DESC LIMIT ?";
+
     private static final String SQL_USER_STATS = 
         "SELECT " +
         "  COUNT(*) AS total, " +
@@ -55,20 +58,31 @@ public class ComplaintDAO {
         "  SUM(CASE WHEN status IN ('RESOLVED', 'CLOSED') THEN 1 ELSE 0 END) AS resolved " +
         "FROM complaints WHERE user_id = ?";
 
-    /**
-     * Creates a new complaint and logs its initial NEW status update atomically within a transaction.
-     * 
-     * @param complaint complaint to create
-     * @return generated complaint ID
-     * @throws SQLException on database failure
-     */
+    private static final String SQL_ADMIN_STATS = 
+        "SELECT " +
+        "  COUNT(*) AS total, " +
+        "  SUM(CASE WHEN status = 'NEW' THEN 1 ELSE 0 END) AS new_complaints, " +
+        "  SUM(CASE WHEN status = 'ASSIGNED' THEN 1 ELSE 0 END) AS assigned, " +
+        "  SUM(CASE WHEN status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress, " +
+        "  SUM(CASE WHEN status = 'RESOLVED' THEN 1 ELSE 0 END) AS resolved, " +
+        "  SUM(CASE WHEN status = 'CLOSED' THEN 1 ELSE 0 END) AS closed " +
+        "FROM complaints";
+
+    private static final String SQL_TECH_WORKLOADS = 
+        "SELECT u.id, u.full_name, " +
+        "       COUNT(c.id) AS active_load " +
+        "FROM users u " +
+        "LEFT JOIN complaints c ON u.id = c.assigned_to AND c.status IN ('ASSIGNED', 'IN_PROGRESS') " +
+        "WHERE u.role = 'TECHNICIAN' " +
+        "GROUP BY u.id, u.full_name " +
+        "ORDER BY active_load ASC, u.full_name ASC";
+
     public int createWithTransaction(Complaint complaint) throws SQLException {
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
-            conn.setAutoCommit(false); // Begin database transaction
+            conn.setAutoCommit(false);
 
-            // Generate complaint reference number (e.g. SR-2026-XXXX)
             String complaintNumber = generateComplaintNumber(conn);
             complaint.setComplaintNumber(complaintNumber);
 
@@ -96,7 +110,6 @@ public class ComplaintDAO {
                 }
             }
 
-            // Step 2: Insert initial audit update in same transaction
             try (PreparedStatement psUpdate = conn.prepareStatement(SQL_INSERT_UPDATE)) {
                 psUpdate.setInt(1, complaintId);
                 psUpdate.setInt(2, complaint.getUserId());
@@ -106,7 +119,7 @@ public class ComplaintDAO {
                 psUpdate.executeUpdate();
             }
 
-            conn.commit(); // Commit transaction atomically
+            conn.commit();
             LOGGER.info("Complaint created successfully with ID: " + complaintId + " Number: " + complaintNumber);
             return complaintId;
 
@@ -186,9 +199,24 @@ public class ComplaintDAO {
         return list;
     }
 
-    /**
-     * Calculates real-time metric aggregates for a specific user.
-     */
+    public List<Complaint> findRecentAll(int limit) throws SQLException {
+        List<Complaint> list = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_FIND_RECENT_ALL)) {
+
+            ps.setInt(1, limit > 0 ? limit : 10);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToComplaint(rs));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error retrieving recent complaints for admin", e);
+            throw e;
+        }
+        return list;
+    }
+
     public Map<String, Integer> getUserStatistics(int userId) throws SQLException {
         Map<String, Integer> stats = new HashMap<>();
         stats.put("total", 0);
@@ -213,6 +241,60 @@ public class ComplaintDAO {
             throw e;
         }
         return stats;
+    }
+
+    /**
+     * Calculates system-wide metrics across all complaints for administrator dashboard.
+     */
+    public Map<String, Integer> getAdminStatistics() throws SQLException {
+        Map<String, Integer> stats = new HashMap<>();
+        stats.put("total", 0);
+        stats.put("newComplaints", 0);
+        stats.put("assigned", 0);
+        stats.put("inProgress", 0);
+        stats.put("resolved", 0);
+        stats.put("closed", 0);
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_ADMIN_STATS);
+             ResultSet rs = ps.executeQuery()) {
+
+            if (rs.next()) {
+                stats.put("total", rs.getInt("total"));
+                stats.put("newComplaints", rs.getInt("new_complaints"));
+                stats.put("assigned", rs.getInt("assigned"));
+                stats.put("inProgress", rs.getInt("in_progress"));
+                stats.put("resolved", rs.getInt("resolved"));
+                stats.put("closed", rs.getInt("closed"));
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error calculating admin statistics", e);
+            throw e;
+        }
+        return stats;
+    }
+
+    /**
+     * Retrieves active workload distribution for all registered technicians.
+     */
+    public List<Map<String, Object>> getTechnicianWorkloads() throws SQLException {
+        List<Map<String, Object>> workloads = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_TECH_WORKLOADS);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("technicianId", rs.getInt("id"));
+                map.put("technicianName", rs.getString("full_name"));
+                map.put("activeLoad", rs.getInt("active_load"));
+                workloads.add(map);
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error retrieving technician workloads", e);
+            throw e;
+        }
+        return workloads;
     }
 
     private String generateComplaintNumber(Connection conn) throws SQLException {
