@@ -6,11 +6,13 @@ import com.smartresolve.dao.UserDAO;
 import com.smartresolve.model.Category;
 import com.smartresolve.model.Complaint;
 import com.smartresolve.model.User;
+import com.smartresolve.service.ComplaintService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -22,9 +24,9 @@ import java.util.logging.Logger;
 /**
  * AdminServlet orchestrates the administrator management portal,
  * system-wide complaint oversight, technician workload monitoring,
- * and multi-criteria search and filtering.
+ * multi-criteria search, filtering, and technician dispatch/assignment.
  */
-@WebServlet(name = "AdminServlet", urlPatterns = {"/admin/dashboard", "/admin/complaints", "/admin/users"})
+@WebServlet(name = "AdminServlet", urlPatterns = {"/admin/dashboard", "/admin/complaints", "/admin/complaints/assign", "/admin/users"})
 public class AdminServlet extends HttpServlet {
 
     private static final long serialVersionUID = 1L;
@@ -33,6 +35,7 @@ public class AdminServlet extends HttpServlet {
     private ComplaintDAO complaintDAO;
     private CategoryDAO categoryDAO;
     private UserDAO userDAO;
+    private ComplaintService complaintService;
 
     @Override
     public void init() throws ServletException {
@@ -40,6 +43,7 @@ public class AdminServlet extends HttpServlet {
         this.complaintDAO = new ComplaintDAO();
         this.categoryDAO = new CategoryDAO();
         this.userDAO = new UserDAO();
+        this.complaintService = new ComplaintService();
     }
 
     @Override
@@ -54,6 +58,18 @@ public class AdminServlet extends HttpServlet {
             handleComplaints(request, response);
         } else if ("/admin/users".equals(path)) {
             handleUsers(request, response);
+        }
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+
+        request.setCharacterEncoding("UTF-8");
+        String path = request.getServletPath();
+
+        if ("/admin/complaints/assign".equals(path) || "assign".equals(request.getParameter("action"))) {
+            handleAssignTechnician(request, response);
         }
     }
 
@@ -104,6 +120,11 @@ public class AdminServlet extends HttpServlet {
             request.setAttribute("categories", categories);
             request.setAttribute("technicians", technicians);
 
+            // Flash notifications
+            if ("true".equals(request.getParameter("assigned"))) {
+                request.setAttribute("successMessage", "Technician assigned successfully! Audit record logged.");
+            }
+
             // Retain filter state in UI
             request.setAttribute("keyword", keyword);
             request.setAttribute("selectedStatus", status != null ? status.toUpperCase() : "ALL");
@@ -115,6 +136,33 @@ public class AdminServlet extends HttpServlet {
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Failed to execute complaint search and filtering", e);
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Error loading complaints.");
+        }
+    }
+
+    private void handleAssignTechnician(HttpServletRequest request, HttpServletResponse response) 
+            throws IOException {
+
+        HttpSession session = request.getSession(false);
+        int adminId = (Integer) session.getAttribute("userId");
+
+        String complaintIdStr = request.getParameter("complaintId");
+        String technicianIdStr = request.getParameter("technicianId");
+        String remarks = request.getParameter("remarks");
+
+        try {
+            int complaintId = Integer.parseInt(complaintIdStr);
+            int technicianId = Integer.parseInt(technicianIdStr);
+
+            boolean success = complaintService.assignTechnician(complaintId, technicianId, adminId, remarks);
+            if (success) {
+                LOGGER.info("Technician " + technicianId + " assigned to complaint " + complaintId);
+                response.sendRedirect(request.getContextPath() + "/admin/complaints?assigned=true");
+            } else {
+                response.sendRedirect(request.getContextPath() + "/admin/complaints?error=failed");
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Error assigning technician: " + e.getMessage(), e);
+            response.sendRedirect(request.getContextPath() + "/admin/complaints?error=" + e.getMessage());
         }
     }
 

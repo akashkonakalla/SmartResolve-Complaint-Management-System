@@ -3,9 +3,11 @@ package com.smartresolve.service;
 import com.smartresolve.dao.CategoryDAO;
 import com.smartresolve.dao.ComplaintDAO;
 import com.smartresolve.dao.ComplaintUpdateDAO;
+import com.smartresolve.dao.UserDAO;
 import com.smartresolve.model.Category;
 import com.smartresolve.model.Complaint;
 import com.smartresolve.model.ComplaintUpdate;
+import com.smartresolve.model.User;
 import com.smartresolve.util.ValidationUtil;
 
 import java.sql.SQLException;
@@ -19,26 +21,27 @@ public class ComplaintService {
     private final ComplaintDAO complaintDAO;
     private final CategoryDAO categoryDAO;
     private final ComplaintUpdateDAO complaintUpdateDAO;
+    private final UserDAO userDAO;
 
     public ComplaintService() {
         this.complaintDAO = new ComplaintDAO();
         this.categoryDAO = new CategoryDAO();
         this.complaintUpdateDAO = new ComplaintUpdateDAO();
+        this.userDAO = new UserDAO();
     }
 
-    public ComplaintService(ComplaintDAO complaintDAO, CategoryDAO categoryDAO, ComplaintUpdateDAO complaintUpdateDAO) {
+    public ComplaintService(ComplaintDAO complaintDAO, CategoryDAO categoryDAO, 
+                            ComplaintUpdateDAO complaintUpdateDAO, UserDAO userDAO) {
         this.complaintDAO = complaintDAO;
         this.categoryDAO = categoryDAO;
         this.complaintUpdateDAO = complaintUpdateDAO;
+        this.userDAO = userDAO;
     }
 
     public List<Category> getAllCategories() throws SQLException {
         return categoryDAO.findAll();
     }
 
-    /**
-     * Submits a new user service request with input validation and transactional persistence.
-     */
     public Complaint submitComplaint(int userId, int categoryId, String title, 
                                     String description, String location, String priority, 
                                     String imagePath) throws IllegalArgumentException, SQLException {
@@ -66,7 +69,6 @@ public class ComplaintService {
             throw new IllegalArgumentException("Please select a valid complaint category.");
         }
 
-        // Validate priority
         String cleanPriority = Complaint.PRIORITY_MEDIUM;
         if (priority != null) {
             String pUpper = priority.trim().toUpperCase();
@@ -85,6 +87,30 @@ public class ComplaintService {
         return complaint;
     }
 
+    /**
+     * Assigns a technician to a complaint. Validates technician existence, role,
+     * and performs atomic database update with audit logging.
+     */
+    public boolean assignTechnician(int complaintId, int technicianId, int adminId, String remarks) 
+            throws IllegalArgumentException, SQLException {
+
+        Complaint complaint = complaintDAO.findById(complaintId);
+        if (complaint == null) {
+            throw new IllegalArgumentException("Complaint not found.");
+        }
+
+        User technician = userDAO.findById(technicianId);
+        if (technician == null || !User.ROLE_TECHNICIAN.equalsIgnoreCase(technician.getRole())) {
+            throw new IllegalArgumentException("Selected user is not a valid technician.");
+        }
+
+        String note = (remarks != null && !remarks.trim().isEmpty()) 
+                      ? remarks.trim() 
+                      : "Assigned to " + technician.getFullName() + " for service resolution.";
+
+        return complaintDAO.assignTechnicianWithTransaction(complaintId, technicianId, adminId, complaint.getStatus(), note);
+    }
+
     public List<Complaint> getUserComplaints(int userId) throws SQLException {
         return complaintDAO.findByUserId(userId);
     }
@@ -93,9 +119,6 @@ public class ComplaintService {
         return complaintDAO.findById(id);
     }
 
-    /**
-     * Retrieves the complete chronological status update timeline for a complaint.
-     */
     public List<ComplaintUpdate> getComplaintHistory(int complaintId) throws SQLException {
         return complaintUpdateDAO.findByComplaintId(complaintId);
     }

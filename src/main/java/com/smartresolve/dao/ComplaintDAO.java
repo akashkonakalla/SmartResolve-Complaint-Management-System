@@ -14,7 +14,7 @@ import java.util.logging.Logger;
 
 /**
  * ComplaintDAO executes JDBC database operations for complaints.
- * Coordinates transactional insertions and audit trail updates.
+ * Coordinates transactional insertions, technician assignments, and audit trail updates.
  */
 public class ComplaintDAO {
 
@@ -27,6 +27,9 @@ public class ComplaintDAO {
     private static final String SQL_INSERT_UPDATE = 
         "INSERT INTO complaint_updates (complaint_id, updated_by, old_status, new_status, remarks) " +
         "VALUES (?, ?, ?, ?, ?)";
+
+    private static final String SQL_ASSIGN = 
+        "UPDATE complaints SET assigned_to = ?, status = 'ASSIGNED', updated_at = NOW() WHERE id = ?";
 
     private static final String SQL_SELECT_JOIN = 
         "SELECT c.id, c.complaint_number, c.user_id, c.category_id, c.title, c.description, c.location, " +
@@ -130,6 +133,64 @@ public class ComplaintDAO {
                     LOGGER.warning("Transaction rolled back for complaint creation.");
                 } catch (SQLException ex) {
                     LOGGER.log(Level.SEVERE, "Failed to rollback transaction", ex);
+                }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                } catch (SQLException e) {
+                    LOGGER.log(Level.FINE, "Error closing connection", e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Assigns a technician to a complaint atomically within a database transaction,
+     * logging the assignment in complaint_updates.
+     */
+    public boolean assignTechnicianWithTransaction(int complaintId, int technicianId, int adminId, 
+                                                  String oldStatus, String remarks) throws SQLException {
+        Connection conn = null;
+        try {
+            conn = DBConnection.getConnection();
+            conn.setAutoCommit(false); // Begin transaction
+
+            // Step 1: Update complaint status and assigned_to
+            try (PreparedStatement psAssign = conn.prepareStatement(SQL_ASSIGN)) {
+                psAssign.setInt(1, technicianId);
+                psAssign.setInt(2, complaintId);
+                int rows = psAssign.executeUpdate();
+                if (rows == 0) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            // Step 2: Insert audit history in complaint_updates
+            try (PreparedStatement psUpdate = conn.prepareStatement(SQL_INSERT_UPDATE)) {
+                psUpdate.setInt(1, complaintId);
+                psUpdate.setInt(2, adminId);
+                psUpdate.setString(3, oldStatus != null ? oldStatus : "NEW");
+                psUpdate.setString(4, Complaint.STATUS_ASSIGNED);
+                psUpdate.setString(5, remarks != null ? remarks : "Assigned by administrator.");
+                psUpdate.executeUpdate();
+            }
+
+            conn.commit(); // Commit transaction
+            LOGGER.info("Complaint ID " + complaintId + " assigned to technician ID " + technicianId + " by Admin " + adminId);
+            return true;
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                    LOGGER.warning("Transaction rolled back for technician assignment.");
+                } catch (SQLException ex) {
+                    LOGGER.log(Level.SEVERE, "Failed to rollback assignment transaction", ex);
                 }
             }
             throw e;
@@ -291,10 +352,6 @@ public class ComplaintDAO {
         return workloads;
     }
 
-    /**
-     * Executes dynamic, parameterized search and multi-facet filtering.
-     * Guaranteed SQL injection safe via PreparedStatement positional parameters.
-     */
     public List<Complaint> searchAndFilter(String keyword, String status, Integer categoryId, String priority) 
             throws SQLException {
 

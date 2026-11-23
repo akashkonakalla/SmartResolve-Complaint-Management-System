@@ -103,6 +103,15 @@
             </div>
         </div>
 
+        <!-- Success Flash Alert -->
+        <% if (request.getAttribute("successMessage") != null) { %>
+            <div class="alert alert-success alert-dismissible fade show d-flex align-items-center mb-4 shadow-sm" role="alert">
+                <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                <div><%= request.getAttribute("successMessage") %></div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <% } %>
+
         <!-- Filter & Search Toolbar Card -->
         <div class="card filter-card p-4 bg-white mb-4">
             <form action="${pageContext.request.contextPath}/admin/complaints" method="GET" class="row g-3 align-items-end">
@@ -192,7 +201,7 @@
                                 <th>Priority</th>
                                 <th>Status</th>
                                 <th>Technician</th>
-                                <th>Date</th>
+                                <th class="text-end">Dispatch Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -211,7 +220,7 @@
                                     </td>
                                     <td>
                                         <div class="fw-semibold text-dark small"><%= c.getTitle() %></div>
-                                        <div class="text-muted small text-truncate" style="max-width: 250px;"><%= c.getDescription() %></div>
+                                        <div class="text-muted small text-truncate" style="max-width: 200px;"><%= c.getDescription() %></div>
                                     </td>
                                     <td>
                                         <span class="<%= c.getPriorityBadgeClass() %>"><%= c.getPriority() %></span>
@@ -226,8 +235,61 @@
                                             <span class="badge bg-danger-subtle text-danger border border-danger-subtle small">Unassigned</span>
                                         <% } %>
                                     </td>
-                                    <td class="small text-muted">
-                                        <%= c.getCreatedAt() %>
+                                    <td class="text-end">
+                                        <% if (!c.isClosed() && !c.isResolved()) { %>
+                                            <button type="button" class="btn btn-outline-primary btn-sm px-3" 
+                                                    data-bs-toggle="modal" data-bs-target="#assignModal<%= c.getId() %>">
+                                                <i class="bi bi-person-plus me-1"></i>Assign
+                                            </button>
+
+                                            <!-- Technician Assignment Modal Dialog -->
+                                            <div class="modal fade text-start" id="assignModal<%= c.getId() %>" tabindex="-1" aria-hidden="true">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <form action="${pageContext.request.contextPath}/admin/complaints/assign" method="POST">
+                                                            <input type="hidden" name="complaintId" value="<%= c.getId() %>">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title fw-bold">Assign Maintenance Staff</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <div class="mb-3">
+                                                                    <label class="form-label text-muted small">Complaint Number</label>
+                                                                    <div class="fw-bold"><%= c.getComplaintNumber() %> — <%= c.getTitle() %></div>
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="form-label fw-semibold">Select Technician <span class="text-danger">*</span></label>
+                                                                    <select class="form-select" name="technicianId" required>
+                                                                        <option value="" disabled selected>Choose maintenance staff...</option>
+                                                                        <% if (technicians != null) { 
+                                                                            for (User t : technicians) { 
+                                                                                boolean isCurrent = (c.getAssignedTo() != null && c.getAssignedTo().equals(t.getId()));
+                                                                        %>
+                                                                            <option value="<%= t.getId() %>" <%= isCurrent ? "selected" : "" %>>
+                                                                                <%= t.getFullName() %> (Phone: <%= t.getPhone() != null ? t.getPhone() : "N/A" %>)
+                                                                            </option>
+                                                                        <% } } %>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="mb-3">
+                                                                    <label class="form-label fw-semibold">Assignment Remarks</label>
+                                                                    <textarea class="form-control" name="remarks" rows="2" 
+                                                                              placeholder="Provide special instructions or urgent parts notes..."></textarea>
+                                                                </div>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" class="btn btn-primary btn-sm fw-semibold">
+                                                                    <i class="bi bi-check-lg me-1"></i>Confirm Assignment
+                                                                </button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <% } else { %>
+                                            <span class="text-muted small fst-italic">Completed</span>
+                                        <% } %>
                                     </td>
                                 </tr>
                             <% } %>
