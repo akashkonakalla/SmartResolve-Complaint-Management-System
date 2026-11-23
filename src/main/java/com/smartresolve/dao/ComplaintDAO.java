@@ -47,6 +47,11 @@ public class ComplaintDAO {
     private static final String SQL_FIND_BY_USER_ID = 
         SQL_SELECT_JOIN + "WHERE c.user_id = ? ORDER BY c.created_at DESC";
 
+    private static final String SQL_FIND_BY_TECH_ID = 
+        SQL_SELECT_JOIN + 
+        "WHERE c.assigned_to = ? " +
+        "ORDER BY FIELD(c.status, 'ASSIGNED', 'IN_PROGRESS', 'NEW', 'RESOLVED', 'CLOSED'), c.created_at DESC";
+
     private static final String SQL_FIND_RECENT_BY_USER_ID = 
         SQL_SELECT_JOIN + "WHERE c.user_id = ? ORDER BY c.created_at DESC LIMIT ?";
 
@@ -60,6 +65,14 @@ public class ComplaintDAO {
         "  SUM(CASE WHEN status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress, " +
         "  SUM(CASE WHEN status IN ('RESOLVED', 'CLOSED') THEN 1 ELSE 0 END) AS resolved " +
         "FROM complaints WHERE user_id = ?";
+
+    private static final String SQL_TECH_STATS = 
+        "SELECT " +
+        "  COUNT(*) AS total, " +
+        "  SUM(CASE WHEN status = 'ASSIGNED' THEN 1 ELSE 0 END) AS assigned, " +
+        "  SUM(CASE WHEN status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress, " +
+        "  SUM(CASE WHEN status IN ('RESOLVED', 'CLOSED') THEN 1 ELSE 0 END) AS completed " +
+        "FROM complaints WHERE assigned_to = ?";
 
     private static final String SQL_ADMIN_STATS = 
         "SELECT " +
@@ -148,18 +161,13 @@ public class ComplaintDAO {
         }
     }
 
-    /**
-     * Assigns a technician to a complaint atomically within a database transaction,
-     * logging the assignment in complaint_updates.
-     */
     public boolean assignTechnicianWithTransaction(int complaintId, int technicianId, int adminId, 
                                                   String oldStatus, String remarks) throws SQLException {
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
-            conn.setAutoCommit(false); // Begin transaction
+            conn.setAutoCommit(false);
 
-            // Step 1: Update complaint status and assigned_to
             try (PreparedStatement psAssign = conn.prepareStatement(SQL_ASSIGN)) {
                 psAssign.setInt(1, technicianId);
                 psAssign.setInt(2, complaintId);
@@ -170,7 +178,6 @@ public class ComplaintDAO {
                 }
             }
 
-            // Step 2: Insert audit history in complaint_updates
             try (PreparedStatement psUpdate = conn.prepareStatement(SQL_INSERT_UPDATE)) {
                 psUpdate.setInt(1, complaintId);
                 psUpdate.setInt(2, adminId);
@@ -180,7 +187,7 @@ public class ComplaintDAO {
                 psUpdate.executeUpdate();
             }
 
-            conn.commit(); // Commit transaction
+            conn.commit();
             LOGGER.info("Complaint ID " + complaintId + " assigned to technician ID " + technicianId + " by Admin " + adminId);
             return true;
 
@@ -236,6 +243,24 @@ public class ComplaintDAO {
             }
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Error retrieving complaints for user ID: " + userId, e);
+            throw e;
+        }
+        return list;
+    }
+
+    public List<Complaint> findByTechnicianId(int technicianId) throws SQLException {
+        List<Complaint> list = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_FIND_BY_TECH_ID)) {
+
+            ps.setInt(1, technicianId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToComplaint(rs));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error retrieving complaints for technician ID: " + technicianId, e);
             throw e;
         }
         return list;
@@ -299,6 +324,32 @@ public class ComplaintDAO {
             }
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Error calculating statistics for user ID: " + userId, e);
+            throw e;
+        }
+        return stats;
+    }
+
+    public Map<String, Integer> getTechnicianStatistics(int technicianId) throws SQLException {
+        Map<String, Integer> stats = new HashMap<>();
+        stats.put("total", 0);
+        stats.put("assigned", 0);
+        stats.put("inProgress", 0);
+        stats.put("completed", 0);
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_TECH_STATS)) {
+
+            ps.setInt(1, technicianId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    stats.put("total", rs.getInt("total"));
+                    stats.put("assigned", rs.getInt("assigned"));
+                    stats.put("inProgress", rs.getInt("in_progress"));
+                    stats.put("completed", rs.getInt("completed"));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error calculating statistics for technician ID: " + technicianId, e);
             throw e;
         }
         return stats;

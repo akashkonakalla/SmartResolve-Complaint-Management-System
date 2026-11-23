@@ -1,0 +1,89 @@
+package com.smartresolve.controller;
+
+import com.smartresolve.dao.ComplaintDAO;
+import com.smartresolve.model.Complaint;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+import java.io.IOException;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * TechnicianServlet provides maintenance staff with dedicated portals for monitoring
+ * assigned service tasks and viewing their daily work queue.
+ */
+@WebServlet(name = "TechnicianServlet", urlPatterns = {"/technician/dashboard", "/technician/complaints"})
+public class TechnicianServlet extends HttpServlet {
+
+    private static final long serialVersionUID = 1L;
+    private static final Logger LOGGER = Logger.getLogger(TechnicianServlet.class.getName());
+
+    private ComplaintDAO complaintDAO;
+
+    @Override
+    public void init() throws ServletException {
+        super.init();
+        this.complaintDAO = new ComplaintDAO();
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+
+        HttpSession session = request.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            response.sendRedirect(request.getContextPath() + "/login?sessionExpired=true");
+            return;
+        }
+
+        int technicianId = (Integer) session.getAttribute("userId");
+        String path = request.getServletPath();
+
+        if ("/technician/dashboard".equals(path)) {
+            handleDashboard(request, response, technicianId);
+        } else if ("/technician/complaints".equals(path)) {
+            handleAssignedComplaints(request, response, technicianId);
+        }
+    }
+
+    private void handleDashboard(HttpServletRequest request, HttpServletResponse response, int technicianId) 
+            throws ServletException, IOException {
+
+        try {
+            Map<String, Integer> stats = complaintDAO.getTechnicianStatistics(technicianId);
+            List<Complaint> assignedComplaints = complaintDAO.findByTechnicianId(technicianId);
+
+            request.setAttribute("stats", stats);
+            request.setAttribute("complaints", assignedComplaints);
+
+            request.getRequestDispatcher("/WEB-INF/views/technician/dashboard.jsp").forward(request, response);
+
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Failed to load technician dashboard data for: " + technicianId, e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Unable to load technician portal.");
+        }
+    }
+
+    private void handleAssignedComplaints(HttpServletRequest request, HttpServletResponse response, int technicianId) 
+            throws ServletException, IOException {
+
+        try {
+            List<Complaint> assignedComplaints = complaintDAO.findByTechnicianId(technicianId);
+            request.setAttribute("complaints", assignedComplaints);
+
+            request.getRequestDispatcher("/WEB-INF/views/technician/assigned-complaints.jsp").forward(request, response);
+
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Failed to load assigned complaints for technician: " + technicianId, e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Unable to load assigned tasks.");
+        }
+    }
+}
