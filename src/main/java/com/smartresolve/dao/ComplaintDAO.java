@@ -6,7 +6,9 @@ import com.smartresolve.util.DBConnection;
 import java.sql.*;
 import java.time.Year;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,6 +43,17 @@ public class ComplaintDAO {
 
     private static final String SQL_FIND_BY_USER_ID = 
         SQL_SELECT_JOIN + "WHERE c.user_id = ? ORDER BY c.created_at DESC";
+
+    private static final String SQL_FIND_RECENT_BY_USER_ID = 
+        SQL_SELECT_JOIN + "WHERE c.user_id = ? ORDER BY c.created_at DESC LIMIT ?";
+
+    private static final String SQL_USER_STATS = 
+        "SELECT " +
+        "  COUNT(*) AS total, " +
+        "  SUM(CASE WHEN status IN ('NEW', 'ASSIGNED') THEN 1 ELSE 0 END) AS pending, " +
+        "  SUM(CASE WHEN status = 'IN_PROGRESS' THEN 1 ELSE 0 END) AS in_progress, " +
+        "  SUM(CASE WHEN status IN ('RESOLVED', 'CLOSED') THEN 1 ELSE 0 END) AS resolved " +
+        "FROM complaints WHERE user_id = ?";
 
     /**
      * Creates a new complaint and logs its initial NEW status update atomically within a transaction.
@@ -152,6 +165,54 @@ public class ComplaintDAO {
             throw e;
         }
         return list;
+    }
+
+    public List<Complaint> findRecentByUserId(int userId, int limit) throws SQLException {
+        List<Complaint> list = new ArrayList<>();
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_FIND_RECENT_BY_USER_ID)) {
+
+            ps.setInt(1, userId);
+            ps.setInt(2, limit > 0 ? limit : 5);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapRowToComplaint(rs));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error retrieving recent complaints for user ID: " + userId, e);
+            throw e;
+        }
+        return list;
+    }
+
+    /**
+     * Calculates real-time metric aggregates for a specific user.
+     */
+    public Map<String, Integer> getUserStatistics(int userId) throws SQLException {
+        Map<String, Integer> stats = new HashMap<>();
+        stats.put("total", 0);
+        stats.put("pending", 0);
+        stats.put("inProgress", 0);
+        stats.put("resolved", 0);
+
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(SQL_USER_STATS)) {
+
+            ps.setInt(1, userId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    stats.put("total", rs.getInt("total"));
+                    stats.put("pending", rs.getInt("pending"));
+                    stats.put("inProgress", rs.getInt("in_progress"));
+                    stats.put("resolved", rs.getInt("resolved"));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error calculating statistics for user ID: " + userId, e);
+            throw e;
+        }
+        return stats;
     }
 
     private String generateComplaintNumber(Connection conn) throws SQLException {
