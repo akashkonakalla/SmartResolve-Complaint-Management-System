@@ -1,7 +1,6 @@
 package com.smartresolve.filter;
 
 import jakarta.servlet.*;
-import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -49,6 +48,13 @@ public class AuthenticationFilter implements Filter {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
+
+        // Allow container-level internal forwards and error dispatches
+        if (httpRequest.getDispatcherType() == DispatcherType.ERROR || 
+            httpRequest.getDispatcherType() == DispatcherType.FORWARD) {
+            chain.doFilter(request, response);
+            return;
+        }
 
         String contextPath = httpRequest.getContextPath();
         String uri = httpRequest.getRequestURI();
