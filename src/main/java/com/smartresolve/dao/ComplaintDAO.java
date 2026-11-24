@@ -14,7 +14,7 @@ import java.util.logging.Logger;
 
 /**
  * ComplaintDAO executes JDBC database operations for complaints.
- * Coordinates transactional insertions, technician assignments, and audit trail updates.
+ * Coordinates transactional insertions, technician assignments, status transitions, and audit trail updates.
  */
 public class ComplaintDAO {
 
@@ -30,6 +30,15 @@ public class ComplaintDAO {
 
     private static final String SQL_ASSIGN = 
         "UPDATE complaints SET assigned_to = ?, status = 'ASSIGNED', updated_at = NOW() WHERE id = ?";
+
+    private static final String SQL_UPDATE_STATUS_GENERIC = 
+        "UPDATE complaints SET status = ?, updated_at = NOW() WHERE id = ?";
+
+    private static final String SQL_UPDATE_STATUS_RESOLVED = 
+        "UPDATE complaints SET status = 'RESOLVED', updated_at = NOW(), resolved_at = NOW() WHERE id = ?";
+
+    private static final String SQL_UPDATE_STATUS_REOPEN = 
+        "UPDATE complaints SET status = ?, updated_at = NOW(), resolved_at = NULL WHERE id = ?";
 
     private static final String SQL_SELECT_JOIN = 
         "SELECT c.id, c.complaint_number, c.user_id, c.category_id, c.title, c.description, c.location, " +
@@ -198,6 +207,78 @@ public class ComplaintDAO {
                     LOGGER.warning("Transaction rolled back for technician assignment.");
                 } catch (SQLException ex) {
                     LOGGER.log(Level.SEVERE, "Failed to rollback assignment transaction", ex);
+                }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                } catch (SQLException e) {
+                    LOGGER.log(Level.FINE, "Error closing connection", e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Executes an atomic complaint status transition and creates an audit history record.
+     */
+    public boolean updateStatusWithTransaction(int complaintId, String newStatus, int updaterId, 
+                                              String oldStatus, String remarks) throws SQLException {
+        Connection conn = null;
+        try {
+            conn = DBConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            String updateSql;
+            if (Complaint.STATUS_RESOLVED.equalsIgnoreCase(newStatus)) {
+                updateSql = SQL_UPDATE_STATUS_RESOLVED;
+            } else if (Complaint.STATUS_NEW.equalsIgnoreCase(newStatus) || Complaint.STATUS_ASSIGNED.equalsIgnoreCase(newStatus)) {
+                updateSql = SQL_UPDATE_STATUS_REOPEN;
+            } else {
+                updateSql = SQL_UPDATE_STATUS_GENERIC;
+            }
+
+            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                if (Complaint.STATUS_RESOLVED.equalsIgnoreCase(newStatus)) {
+                    ps.setInt(1, complaintId);
+                } else if (Complaint.STATUS_NEW.equalsIgnoreCase(newStatus) || Complaint.STATUS_ASSIGNED.equalsIgnoreCase(newStatus)) {
+                    ps.setString(1, newStatus.toUpperCase());
+                    ps.setInt(2, complaintId);
+                } else {
+                    ps.setString(1, newStatus.toUpperCase());
+                    ps.setInt(2, complaintId);
+                }
+                int rows = ps.executeUpdate();
+                if (rows == 0) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            // Record audit trail entry
+            try (PreparedStatement psUpdate = conn.prepareStatement(SQL_INSERT_UPDATE)) {
+                psUpdate.setInt(1, complaintId);
+                psUpdate.setInt(2, updaterId);
+                psUpdate.setString(3, oldStatus != null ? oldStatus : "UNKNOWN");
+                psUpdate.setString(4, newStatus.toUpperCase());
+                psUpdate.setString(5, remarks != null ? remarks : "Status updated.");
+                psUpdate.executeUpdate();
+            }
+
+            conn.commit();
+            LOGGER.info("Complaint ID " + complaintId + " transitioned from " + oldStatus + " to " + newStatus);
+            return true;
+
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                    LOGGER.warning("Transaction rolled back for status update.");
+                } catch (SQLException ex) {
+                    LOGGER.log(Level.SEVERE, "Failed to rollback status update transaction", ex);
                 }
             }
             throw e;

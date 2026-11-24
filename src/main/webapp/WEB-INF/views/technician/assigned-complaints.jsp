@@ -70,6 +70,23 @@
             </div>
         </div>
 
+        <!-- Notification Alerts -->
+        <% if (request.getAttribute("successMessage") != null) { %>
+            <div class="alert alert-success alert-dismissible fade show d-flex align-items-center mb-4 shadow-sm" role="alert">
+                <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                <div><%= request.getAttribute("successMessage") %></div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <% } %>
+
+        <% if (request.getAttribute("errorMessage") != null) { %>
+            <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-4 shadow-sm" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                <div><%= request.getAttribute("errorMessage") %></div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <% } %>
+
         <!-- Task List -->
         <% if (complaints == null || complaints.isEmpty()) { %>
             <div class="card border-0 shadow-sm p-5 text-center my-4 bg-white">
@@ -92,12 +109,12 @@
                                     <span class="text-muted small"><i class="bi bi-tag me-1"></i><%= c.getCategoryName() %></span>
                                 </div>
                                 <div class="text-muted small">
-                                    <i class="bi bi-clock me-1"></i><%= c.getCreatedAt() %>
+                                    <i class="bi bi-clock me-1"></i>Reported: <%= c.getCreatedAt() %>
                                 </div>
                             </div>
 
                             <h5 class="fw-bold mb-2 text-dark"><%= c.getTitle() %></h5>
-                            <div class="text-secondary small mb-3">
+                            <div class="text-secondary small mb-2">
                                 <i class="bi bi-geo-alt-fill text-danger me-1"></i><strong>Location:</strong> <%= c.getLocation() %>
                             </div>
 
@@ -107,10 +124,69 @@
 
                             <div class="d-flex justify-content-between align-items-center pt-2 border-top flex-wrap gap-2">
                                 <div class="small text-muted">
-                                    <i class="bi bi-person me-1"></i>Reported by: <strong><%= c.getUserName() %></strong> (<%= c.getUserEmail() %>)
+                                    <i class="bi bi-person me-1"></i>Resident: <strong><%= c.getUserName() %></strong> (<%= c.getUserEmail() %>)
                                 </div>
-                                <div>
-                                    <span class="badge bg-secondary-subtle text-secondary border small">Assigned to You</span>
+                                
+                                <!-- Workflow Action Buttons -->
+                                <div class="d-flex gap-2">
+                                    <% if (c.isAssigned()) { %>
+                                        <!-- Step 1: Start Work -->
+                                        <form action="${pageContext.request.contextPath}/technician/status/update" method="POST" class="d-inline">
+                                            <input type="hidden" name="complaintId" value="<%= c.getId() %>">
+                                            <input type="hidden" name="status" value="IN_PROGRESS">
+                                            <input type="hidden" name="remarks" value="Technician commenced diagnostic and physical maintenance work.">
+                                            <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+                                                <i class="bi bi-play-circle me-1"></i>Start Work
+                                            </button>
+                                        </form>
+                                    <% } else if (c.isInProgress()) { %>
+                                        <!-- Step 2: Mark Resolved Modal Trigger -->
+                                        <button type="button" class="btn btn-success btn-sm fw-semibold" 
+                                                data-bs-toggle="modal" data-bs-target="#resolveModal<%= c.getId() %>">
+                                            <i class="bi bi-check2-circle me-1"></i>Complete & Resolve
+                                        </button>
+
+                                        <!-- Resolution Modal Dialog -->
+                                        <div class="modal fade text-start" id="resolveModal<%= c.getId() %>" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <form action="${pageContext.request.contextPath}/technician/status/update" method="POST">
+                                                        <input type="hidden" name="complaintId" value="<%= c.getId() %>">
+                                                        <input type="hidden" name="status" value="RESOLVED">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title fw-bold">Report Work Completion</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <div class="mb-3">
+                                                                <label class="form-label text-muted small">Task</label>
+                                                                <div class="fw-bold"><%= c.getComplaintNumber() %> — <%= c.getTitle() %></div>
+                                                                <small class="text-secondary"><%= c.getLocation() %></small>
+                                                            </div>
+                                                            <div class="mb-3">
+                                                                <label class="form-label fw-semibold">Resolution Remarks <span class="text-danger">*</span></label>
+                                                                <textarea class="form-control" name="remarks" rows="3" required
+                                                                          placeholder="Describe what repairs or replacements were performed..."></textarea>
+                                                                <div class="form-text">Explain the fix so the resident can inspect and confirm resolution.</div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                                            <button type="submit" class="btn btn-success btn-sm fw-semibold">
+                                                                <i class="bi bi-check-lg me-1"></i>Mark Task Resolved
+                                                            </button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <% } else if (c.isResolved()) { %>
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2">
+                                            <i class="bi bi-check-all me-1"></i>Resolved (Pending User Confirmation)
+                                        </span>
+                                    <% } else if (c.isClosed()) { %>
+                                        <span class="badge bg-dark px-3 py-2">Closed & Verified</span>
+                                    <% } %>
                                 </div>
                             </div>
                         </div>

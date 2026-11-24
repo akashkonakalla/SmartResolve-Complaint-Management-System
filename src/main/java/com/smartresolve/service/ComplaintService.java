@@ -87,10 +87,6 @@ public class ComplaintService {
         return complaint;
     }
 
-    /**
-     * Assigns a technician to a complaint. Validates technician existence, role,
-     * and performs atomic database update with audit logging.
-     */
     public boolean assignTechnician(int complaintId, int technicianId, int adminId, String remarks) 
             throws IllegalArgumentException, SQLException {
 
@@ -109,6 +105,48 @@ public class ComplaintService {
                       : "Assigned to " + technician.getFullName() + " for service resolution.";
 
         return complaintDAO.assignTechnicianWithTransaction(complaintId, technicianId, adminId, complaint.getStatus(), note);
+    }
+
+    /**
+     * Executes validated state transitions across the complaint lifecycle:
+     * ASSIGNED -> IN_PROGRESS -> RESOLVED -> CLOSED, or Admin reopening.
+     */
+    public boolean updateComplaintStatus(int complaintId, String targetStatus, int updaterId, 
+                                        String updaterRole, String remarks) 
+            throws IllegalArgumentException, SQLException {
+
+        Complaint complaint = complaintDAO.findById(complaintId);
+        if (complaint == null) {
+            throw new IllegalArgumentException("Complaint record not found.");
+        }
+
+        String currentStatus = complaint.getStatus();
+        String newStatus = targetStatus.toUpperCase().trim();
+
+        // Security check: Technician can only update their own assigned complaints
+        if (User.ROLE_TECHNICIAN.equalsIgnoreCase(updaterRole)) {
+            if (complaint.getAssignedTo() == null || complaint.getAssignedTo() != updaterId) {
+                throw new IllegalArgumentException("You are not authorized to update complaints assigned to another technician.");
+            }
+            // Technician valid transitions:
+            // ASSIGNED -> IN_PROGRESS
+            // IN_PROGRESS -> RESOLVED
+            if (Complaint.STATUS_ASSIGNED.equals(currentStatus) && !Complaint.STATUS_IN_PROGRESS.equals(newStatus)) {
+                throw new IllegalArgumentException("Work order must be moved to IN_PROGRESS before marking resolved.");
+            }
+            if (Complaint.STATUS_IN_PROGRESS.equals(currentStatus) && !Complaint.STATUS_RESOLVED.equals(newStatus)) {
+                throw new IllegalArgumentException("In-progress tasks can only be transitioned to RESOLVED.");
+            }
+            if (Complaint.STATUS_RESOLVED.equals(currentStatus) || Complaint.STATUS_CLOSED.equals(currentStatus)) {
+                throw new IllegalArgumentException("Complaint is already resolved or closed.");
+            }
+        }
+
+        String note = (remarks != null && !remarks.trim().isEmpty()) 
+                      ? remarks.trim() 
+                      : "Status updated to " + newStatus;
+
+        return complaintDAO.updateStatusWithTransaction(complaintId, newStatus, updaterId, currentStatus, note);
     }
 
     public List<Complaint> getUserComplaints(int userId) throws SQLException {
