@@ -1,0 +1,93 @@
+/* ====================================================================
+   SmartResolve — Global Design System & Core Stylesheet
+   ==================================================================== */
+
+:root {
+    --sr-primary: #2563eb;
+    --sr-primary-hover: #1d4ed8;
+    --sr-secondary: #64748b;
+    --sr-success: #16a34a;
+    --sr-warning: #f59e0b;
+    --sr-danger: #dc2626;
+    --sr-bg: #f8fafc;
+    --sr-card-bg: #ffffff;
+    --sr-border: #e2e8f0;
+}
+
+body {
+    background-color: var(--sr-bg);
+    color: #1e293b;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Card Styling */
+.sr-card {
+    background-color: var(--sr-card-bg);
+    border: 1px solid var(--sr-border);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sr-card:hover {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+/* Status Badge Palette */
+.badge-status-new {
+    background-color: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.badge-status-assigned {
+    background-color: #fef3c7;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+
+.badge-status-in-progress {
+    background-color: #e0e7ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+}
+
+.badge-status-resolved {
+    background-color: #dcfce7;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+}
+
+.badge-status-closed {
+    background-color: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+
+/* Priority Indicators */
+.badge-priority-low {
+    background-color: #f8fafc;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+.badge-priority-medium {
+    background-color: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+}
+
+.badge-priority-high {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #ffedd5;
+}
+
+.badge-priority-urgent {
+    background-color: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
