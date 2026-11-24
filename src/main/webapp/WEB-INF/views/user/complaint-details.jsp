@@ -2,6 +2,7 @@
 <%@ page import="java.util.List" %>
 <%@ page import="com.smartresolve.model.Complaint" %>
 <%@ page import="com.smartresolve.model.ComplaintUpdate" %>
+<%@ page import="com.smartresolve.model.Feedback" %>
 <%
     Complaint c = (Complaint) request.getAttribute("complaint");
     if (c == null) {
@@ -10,6 +11,9 @@
     }
     @SuppressWarnings("unchecked")
     List<ComplaintUpdate> updates = (List<ComplaintUpdate>) request.getAttribute("updates");
+    Feedback fb = (Feedback) request.getAttribute("feedback");
+    String successMsg = (String) request.getAttribute("successMessage");
+    String errorParam = request.getParameter("error");
 %>
 <!DOCTYPE html>
 <html lang="en">
@@ -61,6 +65,21 @@
             justify-content: center;
             font-size: 12px;
         }
+        .rating-option {
+            cursor: pointer;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 14px;
+            transition: all 0.2s ease;
+        }
+        .rating-option:hover {
+            border-color: #f59e0b;
+            background-color: #fffbeb;
+        }
+        .form-check-input:checked + .rating-label {
+            font-weight: bold;
+            color: #b45309;
+        }
     </style>
 </head>
 <body>
@@ -94,9 +113,23 @@
             </ol>
         </nav>
 
+        <% if (successMsg != null) { %>
+            <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i><%= successMsg %>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <% } %>
+
+        <% if (errorParam != null && !errorParam.trim().isEmpty()) { %>
+            <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i><%= errorParam %>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <% } %>
+
         <div class="row g-4">
             
-            <!-- Left Column: Complaint Overview & Audit Timeline -->
+            <!-- Left Column: Complaint Overview & Audit Timeline & Feedback -->
             <div class="col-lg-8">
                 
                 <!-- Main Overview Card -->
@@ -151,9 +184,104 @@
                         </a>
                         <% if (c.isResolved()) { %>
                             <span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Work Marked Resolved</span>
+                        <% } else if (c.isClosed()) { %>
+                            <span class="text-secondary fw-semibold"><i class="bi bi-archive-fill me-1"></i>Complaint Closed</span>
                         <% } %>
                     </div>
                 </div>
+
+                <!-- Post-Resolution Feedback Section -->
+                <% if (c.isResolved() && fb == null) { %>
+                    <!-- User Feedback Form Card -->
+                    <div class="card detail-card p-4 bg-white mb-4 border-start border-4 border-warning shadow-sm">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-star-fill text-warning fs-3 me-2"></i>
+                            <div>
+                                <h5 class="fw-bold mb-0">Confirm Resolution & Rate Service</h5>
+                                <small class="text-muted">The assigned technician marked this issue resolved. Please rate your experience to close the ticket.</small>
+                            </div>
+                        </div>
+                        <hr class="my-3">
+                        <form action="${pageContext.request.contextPath}/user/complaint/feedback" method="POST">
+                            <input type="hidden" name="complaintId" value="<%= c.getId() %>">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">How would you rate the resolution quality? <span class="text-danger">*</span></label>
+                                <div class="row g-2">
+                                    <div class="col-md-auto">
+                                        <label class="rating-option d-flex align-items-center">
+                                            <input type="radio" name="rating" value="5" class="form-check-input me-2" checked>
+                                            <span class="rating-label">⭐⭐⭐⭐⭐ 5 - Excellent</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-auto">
+                                        <label class="rating-option d-flex align-items-center">
+                                            <input type="radio" name="rating" value="4" class="form-check-input me-2">
+                                            <span class="rating-label">⭐⭐⭐⭐ 4 - Good</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-auto">
+                                        <label class="rating-option d-flex align-items-center">
+                                            <input type="radio" name="rating" value="3" class="form-check-input me-2">
+                                            <span class="rating-label">⭐⭐⭐ 3 - Average</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-auto">
+                                        <label class="rating-option d-flex align-items-center">
+                                            <input type="radio" name="rating" value="2" class="form-check-input me-2">
+                                            <span class="rating-label">⭐⭐ 2 - Fair</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-auto">
+                                        <label class="rating-option d-flex align-items-center">
+                                            <input type="radio" name="rating" value="1" class="form-check-input me-2">
+                                            <span class="rating-label">⭐ 1 - Poor</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="comments" class="form-label fw-semibold">Feedback / Comments (Optional)</label>
+                                <textarea class="form-control" id="comments" name="comments" rows="3" placeholder="Share your experience or remarks regarding the resolution..."></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-warning text-dark fw-bold px-4">
+                                <i class="bi bi-check2-circle me-1"></i>Submit Feedback & Close Ticket
+                            </button>
+                        </form>
+                    </div>
+                <% } %>
+
+                <!-- Completed Feedback Review Card (if already submitted) -->
+                <% if (fb != null) { %>
+                    <div class="card detail-card p-4 bg-white mb-4 border-start border-4 border-success shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap">
+                            <h5 class="fw-bold mb-0 text-success">
+                                <i class="bi bi-chat-heart-fill me-2"></i>Citizen Feedback & Rating
+                            </h5>
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                <i class="bi bi-check-circle me-1"></i>Verified Feedback
+                            </span>
+                        </div>
+                        <div class="d-flex align-items-center my-3">
+                            <div class="fs-4 text-warning me-3">
+                                <% for (int s = 1; s <= 5; s++) { %>
+                                    <i class="bi <%= s <= fb.getRating() ? "bi-star-fill text-warning" : "bi-star text-muted" %>"></i>
+                                <% } %>
+                            </div>
+                            <span class="badge bg-dark fs-6"><%= fb.getRating() %> / 5 — <%= fb.getRatingLabel() %></span>
+                        </div>
+                        <% if (fb.getComments() != null && !fb.getComments().trim().isEmpty()) { %>
+                            <div class="p-3 bg-light rounded-3 text-secondary fst-italic mb-2">
+                                "<%= fb.getComments() %>"
+                            </div>
+                        <% } %>
+                        <div class="text-muted small">
+                            <i class="bi bi-clock me-1"></i>Submitted on <%= fb.getCreatedAt() %>
+                        </div>
+                    </div>
+                <% } %>
 
                 <!-- Complaint Status History Timeline Card -->
                 <div class="card detail-card p-4 bg-white">

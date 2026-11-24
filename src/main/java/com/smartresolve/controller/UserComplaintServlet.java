@@ -2,6 +2,7 @@ package com.smartresolve.controller;
 
 import com.smartresolve.model.Complaint;
 import com.smartresolve.model.ComplaintUpdate;
+import com.smartresolve.model.Feedback;
 import com.smartresolve.model.User;
 import com.smartresolve.service.ComplaintService;
 import jakarta.servlet.ServletException;
@@ -19,11 +20,11 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * UserComplaintServlet handles listing a user's submitted complaints
- * and viewing detailed individual complaint records with IDOR protection
- * and complete audit history timelines.
+ * UserComplaintServlet handles listing a user's submitted complaints,
+ * viewing detailed individual complaint records with IDOR protection,
+ * and submitting post-resolution satisfaction feedback.
  */
-@WebServlet(name = "UserComplaintServlet", urlPatterns = {"/user/complaints", "/user/complaint/details"})
+@WebServlet(name = "UserComplaintServlet", urlPatterns = {"/user/complaints", "/user/complaint/details", "/user/complaint/feedback"})
 public class UserComplaintServlet extends HttpServlet {
 
     private static final long serialVersionUID = 1L;
@@ -55,6 +56,26 @@ public class UserComplaintServlet extends HttpServlet {
             handleListComplaints(request, response, currentUserId);
         } else if ("/user/complaint/details".equals(servletPath)) {
             handleComplaintDetails(request, response, currentUserId, currentUserRole);
+        }
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+
+        HttpSession session = request.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            response.sendRedirect(request.getContextPath() + "/login?sessionExpired=true");
+            return;
+        }
+
+        int currentUserId = (Integer) session.getAttribute("userId");
+        String servletPath = request.getServletPath();
+
+        if ("/user/complaint/feedback".equals(servletPath)) {
+            handleFeedbackSubmission(request, response, currentUserId);
+        } else {
+            response.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
         }
     }
 
@@ -90,7 +111,7 @@ public class UserComplaintServlet extends HttpServlet {
     }
 
     private void handleComplaintDetails(HttpServletRequest request, HttpServletResponse response, 
-                                       int currentUserId, String currentUserRole) 
+                                        int currentUserId, String currentUserRole) 
             throws ServletException, IOException {
 
         String idStr = request.getParameter("id");
@@ -124,13 +145,56 @@ public class UserComplaintServlet extends HttpServlet {
             // Load audit status timeline
             List<ComplaintUpdate> updates = complaintService.getComplaintHistory(complaintId);
 
+            // Load feedback if already submitted
+            Feedback feedback = complaintService.getFeedbackByComplaintId(complaintId);
+
             request.setAttribute("complaint", complaint);
             request.setAttribute("updates", updates);
+            request.setAttribute("feedback", feedback);
+
+            if ("true".equals(request.getParameter("feedbackSuccess"))) {
+                request.setAttribute("successMessage", "Thank you! Your feedback has been recorded, and the complaint is now closed.");
+            }
+
             request.getRequestDispatcher("/WEB-INF/views/user/complaint-details.jsp").forward(request, response);
 
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Error loading complaint details for ID: " + complaintId, e);
             response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Unable to retrieve complaint details.");
+        }
+    }
+
+    private void handleFeedbackSubmission(HttpServletRequest request, HttpServletResponse response, int currentUserId) 
+            throws ServletException, IOException {
+
+        String complaintIdStr = request.getParameter("complaintId");
+        String ratingStr = request.getParameter("rating");
+        String comments = request.getParameter("comments");
+
+        if (complaintIdStr == null || ratingStr == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing required feedback fields.");
+            return;
+        }
+
+        int complaintId;
+        int rating;
+        try {
+            complaintId = Integer.parseInt(complaintIdStr.trim());
+            rating = Integer.parseInt(ratingStr.trim());
+        } catch (NumberFormatException e) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid numerical inputs.");
+            return;
+        }
+
+        try {
+            complaintService.submitFeedback(complaintId, currentUserId, rating, comments);
+            response.sendRedirect(request.getContextPath() + "/user/complaint/details?id=" + complaintId + "&feedbackSuccess=true");
+        } catch (IllegalArgumentException e) {
+            request.setAttribute("errorMessage", e.getMessage());
+            response.sendRedirect(request.getContextPath() + "/user/complaint/details?id=" + complaintId + "&error=" + java.net.URLEncoder.encode(e.getMessage(), "UTF-8"));
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error saving feedback for complaint " + complaintId, e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Failed to submit feedback.");
         }
     }
 }

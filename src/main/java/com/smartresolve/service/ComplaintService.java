@@ -3,13 +3,17 @@ package com.smartresolve.service;
 import com.smartresolve.dao.CategoryDAO;
 import com.smartresolve.dao.ComplaintDAO;
 import com.smartresolve.dao.ComplaintUpdateDAO;
+import com.smartresolve.dao.FeedbackDAO;
 import com.smartresolve.dao.UserDAO;
 import com.smartresolve.model.Category;
 import com.smartresolve.model.Complaint;
 import com.smartresolve.model.ComplaintUpdate;
+import com.smartresolve.model.Feedback;
 import com.smartresolve.model.User;
+import com.smartresolve.util.DBConnection;
 import com.smartresolve.util.ValidationUtil;
 
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -21,20 +25,23 @@ public class ComplaintService {
     private final ComplaintDAO complaintDAO;
     private final CategoryDAO categoryDAO;
     private final ComplaintUpdateDAO complaintUpdateDAO;
+    private final FeedbackDAO feedbackDAO;
     private final UserDAO userDAO;
 
     public ComplaintService() {
         this.complaintDAO = new ComplaintDAO();
         this.categoryDAO = new CategoryDAO();
         this.complaintUpdateDAO = new ComplaintUpdateDAO();
+        this.feedbackDAO = new FeedbackDAO();
         this.userDAO = new UserDAO();
     }
 
     public ComplaintService(ComplaintDAO complaintDAO, CategoryDAO categoryDAO, 
-                            ComplaintUpdateDAO complaintUpdateDAO, UserDAO userDAO) {
+                            ComplaintUpdateDAO complaintUpdateDAO, FeedbackDAO feedbackDAO, UserDAO userDAO) {
         this.complaintDAO = complaintDAO;
         this.categoryDAO = categoryDAO;
         this.complaintUpdateDAO = complaintUpdateDAO;
+        this.feedbackDAO = feedbackDAO;
         this.userDAO = userDAO;
     }
 
@@ -147,6 +154,73 @@ public class ComplaintService {
                       : "Status updated to " + newStatus;
 
         return complaintDAO.updateStatusWithTransaction(complaintId, newStatus, updaterId, currentStatus, note);
+    }
+
+    /**
+     * Records citizen feedback and automatically closes the complaint in an atomic transaction.
+     */
+    public boolean submitFeedback(int complaintId, int userId, int rating, String comments) 
+            throws IllegalArgumentException, SQLException {
+
+        if (rating < 1 || rating > 5) {
+            throw new IllegalArgumentException("Rating must be between 1 and 5 stars.");
+        }
+
+        Complaint complaint = complaintDAO.findById(complaintId);
+        if (complaint == null) {
+            throw new IllegalArgumentException("Complaint record not found.");
+        }
+        if (complaint.getUserId() != userId) {
+            throw new IllegalArgumentException("You are only authorized to provide feedback on your own complaints.");
+        }
+
+        Feedback existingFeedback = feedbackDAO.findByComplaintId(complaintId);
+        if (existingFeedback != null) {
+            throw new IllegalArgumentException("Feedback has already been submitted for this complaint.");
+        }
+
+        String sanitizedComments = comments != null ? ValidationUtil.sanitize(comments.trim()) : "";
+
+        try (Connection conn = DBConnection.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                // 1. Insert feedback record
+                Feedback feedback = new Feedback(complaintId, userId, rating, sanitizedComments);
+                feedbackDAO.create(feedback, conn);
+
+                // 2. Transition status from RESOLVED -> CLOSED if currently RESOLVED
+                String currentStatus = complaint.getStatus();
+                if (Complaint.STATUS_RESOLVED.equalsIgnoreCase(currentStatus)) {
+                    complaintDAO.updateStatusWithTransaction(
+                        complaintId, 
+                        Complaint.STATUS_CLOSED, 
+                        userId, 
+                        currentStatus, 
+                        "User confirmed resolution with " + rating + "-star rating. Complaint closed."
+                    );
+                }
+
+                conn.commit();
+                return true;
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        }
+    }
+
+    public Feedback getFeedbackByComplaintId(int complaintId) throws SQLException {
+        return feedbackDAO.findByComplaintId(complaintId);
+    }
+
+    public double getAverageRating() throws SQLException {
+        return feedbackDAO.getAverageRating();
+    }
+
+    public List<Feedback> getRecentFeedback(int limit) throws SQLException {
+        return feedbackDAO.findRecent(limit);
     }
 
     public List<Complaint> getUserComplaints(int userId) throws SQLException {
